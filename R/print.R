@@ -18,32 +18,67 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-print.xts <-
-  function(x,
-           fmt,
-           ...,
-           show.rows = 10,
-           max.rows = 100)
+print.xts <- 
+function(x,
+         fmt,
+         ...,
+         show.attrs = TRUE,
+         attr.trunc = 50L,
+         show.rows = 5,
+         max.rows = 20) 
 {
-  check.TZ(x)
-
+  args <- list(...)
+  
+  check.TZ(x)  
+  
+  if (show.attrs) {
+    cat("Attributes:")
+    if (!is.null(xtsAttributes(x))) {
+      attrs <- t(data.frame(lapply(X = xts::xtsAttributes(x),
+                                   FUN = function(x) {
+                                     if (inherits(x, c("Date", "POSIXt"))) {
+                                       x <- format(x)
+                                       x <- paste(x, collapse = ", ")
+                                     } else if (inherits(x,c("integer", "numeric", "logical", "character"))){
+                                       x <- paste(x, collapse = ", ")
+                                     } else {
+                                       x <- paste(gsub(x = utils::capture.output(utils::str(x)), pattern = "\\s+", replacement = " "), collapse = "")
+                                     }
+                                     paste0(": ",x)
+                                   }),
+                            row.names = ""))
+      rownames(attrs) <- paste0(" ", rownames(attrs))
+      if (missing(attr.trunc)) {
+        attr.trunc <- getOption("xts.print.attr.trunc", attr.trunc)
+      }
+      if (attr.trunc >= 0) {
+        attr.trunc <- attr.trunc + 2 # + 2 to allow for ": " to be printed
+        attrs[nchar(attrs[, 1]) > attr.trunc] <- paste(substr(attrs[nchar(attrs[, 1]) > attr.trunc], 1, attr.trunc), "...", sep = "")
+      }
+      print(attrs, quote = "FALSE")
+    } else {
+      cat("\n NULL\n")
+    }
+    cat("\n")
+  }
+  
   nr <- NROW(x)
   nc <- NCOL(x)
-
+  
   if (missing(max.rows)) {
     # the user didn't specify a value; use the global option value if it's
     # set; if it's not set, use the default value
     max.rows <- getOption("xts.print.max.rows", max.rows)
   }
-
+  
   # 'max' in print.default() takes precedence over 'show.rows'
-  if (hasArg("max")) {
+  if ("max" %in% names(args)) {
     # 'max' is the number of *elements* (not rows) to print
     if (nr < 1) {
       show.rows <- 0
     } else {
       # convert 'max' to 'show.rows'
-      max.arg <- match.call()$max
+      max.arg <- args$max
       if (!is.null(max.arg)) {
         show.rows <- trunc(max.arg / nc)
       }
@@ -60,45 +95,45 @@ print.xts <-
   if (is.null(fmt)) {
     fmt <- TRUE
   }
-
-  if (!hasArg("quote")) {
-    quote <- FALSE
+  
+  if (!"quote" %in% names(args)) {
+    args$quote <- FALSE
   }
-  if (!hasArg("right")) {
-    right <- TRUE
+  if (!"right" %in% names(args)) {
+    args$right <- TRUE
   }
-
+  
   if (nr > max.rows && nr > 2 * show.rows) {
     # 'show.rows' can't be more than 2*nrow(x) or observations will be printed
     # twice, once before the "..." and once after.
     seq.row <- seq_len(show.rows)
     seq.col <- seq_len(nc)
     seq.n <- (nr - show.rows + 1):nr
-
+    
     index <- c(as.character(index(x)[seq.row]),
                "...",
                as.character(index(x)[seq.n]))
-
+    
     # as.matrix() to ensure we have dims
     # unclass() avoids as.matrix() method dispatch
     m <- as.matrix(unclass(x))
-
+    
     # convert to data.frame to format each column individually
     m <- data.frame(m[c(seq.row, seq.n), seq.col, drop = FALSE])
     m[] <- lapply(m, format)
     m <- as.matrix(m)
-
+    
     # insert blank row between top and bottom rows
     y <- rbind(utils::head(m, show.rows),
                rep("", nc),
                utils::tail(m, show.rows))
-
+    
     rownames(y) <- format(index, justify = "right")
-    colnames(y) <- colnames(m[, seq.col, drop = FALSE])
+    colnames(y) <- colnames(x[, seq.col, drop = FALSE])
   } else {
     y <- coredata(x, fmt)
   }
-
+    
   if (length(y) == 0) {
     if (!is.null(dim(x))) {
       p <- structure(vector(storage.mode(y)), dim = dim(x),
@@ -113,7 +148,7 @@ print.xts <-
       if (length(index) == 0) {
         print(index)
       } else {
-        print(str(index))
+        cat(str(index))
       }
     }
   } else {
@@ -124,11 +159,13 @@ print.xts <-
     }
     # Create column names as column indexes.
     if (is.null(colnames(y))) {
-      colnames(y) <- paste0("[,", seq_len(ncol(y)), "]")
+      colnames(y) <- paste0("[,", seq_len(nc), "]")
+    }    
+    if (show.attrs) {
+      cat("Data:\n")
     }
-
-    print(y, quote = quote, right = right, ...)
+    do.call(print, c(list(y), args))
   }
-
+ 
   invisible(x)
 }
